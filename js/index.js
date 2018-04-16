@@ -12,12 +12,11 @@ $(function() {
 
   $('#' + dataSelector).selectpicker('hide');
 
-  d3.json('/datafiles', results => {
-    $('#' + dataSelector).html(results.files.map((d, i) => `<option value="${d.file}">${d.name}</option>`).join(''));
-    $('#' + dataSelector).selectpicker('refresh');
-    $('#' + dataSelector).selectpicker('show');
-    $('#' + dataSelector).selectpicker('render');
-  });
+  let results = {files: [{file: './json/data.json', name: 'data.json'}, {file: './json/data2.json', name: 'data2.json'}]};
+  $('#' + dataSelector).html(results.files.map((d, i) => `<option value="${d.file}">${d.name}</option>`).join(''));
+  $('#' + dataSelector).selectpicker('refresh');
+  $('#' + dataSelector).selectpicker('show');
+  $('#' + dataSelector).selectpicker('render');
 
   // Act upon json reload
   $('#' + dataSelector).on('rendered.bs.select', event => {
