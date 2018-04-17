@@ -10,14 +10,6 @@ $(function() {
   // used to maintain the main frame container
   var frame = new Frame(plotContainerId, totalWidth, totalHeight);
 
-  $('#' + dataSelector).selectpicker('hide');
-
-  let results = {files: [{file: './json/data.json', name: 'data.json'}, {file: './json/data2.json', name: 'data2.json'}]};
-  $('#' + dataSelector).html(results.files.map((d, i) => `<option value="${d.file}">${d.name}</option>`).join(''));
-  $('#' + dataSelector).selectpicker('refresh');
-  $('#' + dataSelector).selectpicker('show');
-  $('#' + dataSelector).selectpicker('render');
-
   // Act upon json reload
   $('#' + dataSelector).on('rendered.bs.select', event => {
     d3.queue()
