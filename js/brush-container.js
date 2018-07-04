@@ -128,6 +128,9 @@ class BrushContainer {
 
         // finally, update the chart with the selection in question
         self.update();
+        // update the url state
+        self.frame.url = `/index.html?file=${self.frame.dataFile}&location=${self.frame.note}`;
+        history.replaceState(self.frame.url, 'Project gGnome.js', self.frame.url);
     });
 
     this.fragments.push(new Fragment(brush));
@@ -152,6 +155,9 @@ class BrushContainer {
 
     // Draw the chromosome axis
     this.renderChromoAxis();
+
+    // Draw the Y Axis
+    this.renderYAxis()
 
     // Draw the intervals
     this.renderIntervals();
@@ -215,6 +221,7 @@ class BrushContainer {
 
     // Determine the panel parameters for rendering
     this.visibleFragments.forEach((d, i) => {
+      d.selectionSize = d.selection[1] -  d.selection[0];
       d.panelWidth = this.panelWidth;
       d.panelHeight = this.panelHeight;
       d.range = [i * (d.panelWidth + this.frame.margins.panels.gap), (i + 1) * d.panelWidth + i * this.frame.margins.panels.gap];
@@ -245,6 +252,7 @@ class BrushContainer {
       // filter the intervals
       d.visibleIntervals = [];
       this.frame.intervals
+      .filter((e, j) => ((d.selectionSize < this.frame.margins.brushes.minSelectionSize) ? ((!this.frame.hasSubintervals) || (e.isSubInterval)) : (!e.isSubInterval)))
       .filter((e, j) => ((e.startPlace <= d.domain[1]) && (e.startPlace >= d.domain[0])) || ((e.endPlace <= d.domain[1]) && (e.endPlace >= d.domain[0]))
         || ((d.domain[1] <= e.endPlace) && (d.domain[1] >= e.startPlace)) || ((d.domain[0] <= e.endPlace) && (d.domain[0] >= e.startPlace)))
       .forEach((inter, j) => {
@@ -257,24 +265,26 @@ class BrushContainer {
       });
       // filter the Genes
       d.visibleGenes = [];
-      this.frame.genes
-      .map((e,j) => {e.y = 0; return e;})
-      .filter((e, j) => ((e.startPlace <= d.domain[1]) && (e.startPlace >= d.domain[0])) || ((e.endPlace <= d.domain[1]) && (e.endPlace >= d.domain[0]))
-        || (((d.domain[1] <= e.endPlace) && (d.domain[1] >= e.startPlace)) || ((d.domain[0] <= e.endPlace) && (d.domain[0] >= e.startPlace))))
-      .forEach((gene, j) => {
-        gene.identifier = Misc.guid;
-        gene.range = [d3.max([0, d.innerScale(gene.startPlace)]), d.innerScale(gene.endPlace)];
-        gene.shapeWidth = gene.range[1] - gene.range[0];
-        gene.shapeHeight = (gene.type === 'gene') ? this.frame.margins.intervals.geneBar : this.frame.margins.intervals.bar;
-        gene.fragment = d;
-        if (gene.shapeWidth > this.frame.margins.genes.selectionSize) {
-          let collisions = d.visibleGenes.filter((f,k) => (gene.identifier !== f.identifier) && gene.isOverlappingWith(f));
-          gene.y = collisions.length > 0 ? d3.max(collisions.map((f,k) => f.y)) + 1 : 0;
-          d.visibleGenes.push(gene);
-        }
-      });
-      d.yGenes = d3.map(d.visibleGenes, e => e.y).keys().sort((x,y) => d3.ascending(x,y));
-      d.yGeneScale = d3.scalePoint().domain(d.yGenes).padding([1]).rangeRound(this.frame.yGeneScale.range());
+      if (this.frame.genes) {
+        this.frame.genes
+        .map((e,j) => {e.y = 0; return e;})
+        .filter((e, j) => ((e.startPlace <= d.domain[1]) && (e.startPlace >= d.domain[0])) || ((e.endPlace <= d.domain[1]) && (e.endPlace >= d.domain[0]))
+          || (((d.domain[1] <= e.endPlace) && (d.domain[1] >= e.startPlace)) || ((d.domain[0] <= e.endPlace) && (d.domain[0] >= e.startPlace))))
+        .forEach((gene, j) => {
+          gene.identifier = Misc.guid;
+          gene.range = [d3.max([0, d.innerScale(gene.startPlace)]), d.innerScale(gene.endPlace)];
+          gene.shapeWidth = gene.range[1] - gene.range[0];
+          gene.shapeHeight = (gene.type === 'gene') ? this.frame.margins.intervals.geneBar : this.frame.margins.intervals.bar;
+          gene.fragment = d;
+          if (gene.shapeWidth > this.frame.margins.genes.selectionSize) {
+            let collisions = d.visibleGenes.filter((f,k) => (gene.identifier !== f.identifier) && gene.isOverlappingWith(f));
+            gene.y = collisions.length > 0 ? d3.max(collisions.map((f,k) => f.y)) + 1 : 0;
+            d.visibleGenes.push(gene);
+          }
+        });
+        d.yGenes = d3.map(d.visibleGenes, e => e.y).keys().sort((x,y) => d3.ascending(x,y));
+        d.yGeneScale = d3.scalePoint().domain(d.yGenes).padding([1]).rangeRound(this.frame.yGeneScale.range());
+      }
       // filter the Walks
       d.visibleWalkIntervals = [];
       this.frame.walks.forEach((walk, j) => {
@@ -291,8 +301,9 @@ class BrushContainer {
         });
       });
       d.yWalks = d3.map(d.visibleWalkIntervals, e => e.y).keys().sort((x,y) => d3.ascending(x,y));
-      d.yWalkScale = d3.scalePoint().domain(d.yWalks).padding([1]).rangeRound([this.frame.margins.panels.gap, this.frame.margins.panels.upperGap - this.frame.margins.panels.chromoGap - this.frame.margins.panels.gap]);    
+      d.yWalkScale = d3.scalePoint().domain(d.yWalks).padding([1]).rangeRound([this.frame.margins.panels.gap, this.frame.margins.panels.upperGap - this.frame.margins.panels.chromoGap - this.frame.margins.panels.gap]);
       // filter the connections on same fragment
+      frameConnections = frameConnections.filter((e, j) => ((d.selectionSize < this.frame.margins.brushes.minSelectionSize) || (!e.isSubConnection)))
       frameConnections
         .filter((e, j) => (!e.source || ((e.source.place <= d.domain[1]) && (e.source.place >= d.domain[0]))) && (!e.sink || ((e.sink.place <= d.domain[1]) && (e.sink.place >= d.domain[0]))))
         .forEach((connection, j) => {
@@ -326,6 +337,7 @@ class BrushContainer {
           this.walkConnections.push(connection);
          });
     });
+
     // filter the connections between the visible fragments
     k_combinations(this.visibleFragments, 2).forEach((pair, i) => {
       frameConnections
@@ -385,6 +397,7 @@ class BrushContainer {
           ||((e.sink.place <= fragment.domain[1]) && (e.sink.place >= fragment.domain[0])))})
         .forEach((con, j) => {
           let connection = Object.assign(new Connection(con), con);
+          connection.yScale = this.frame.yScale;
           connection.locateAnchor(fragment);
           this.connections.push(connection);
         });
@@ -403,6 +416,21 @@ class BrushContainer {
           this.walkConnections.push(connection);
         });
     });
+    // Calculate the yMax from all the intervals present in the current visible fragments
+    this.frame.yMax = d3.min([d3.max(this.visibleFragments.map((d, i) => d.visibleIntervals.map((d, i) => d.y)).reduce((acc, c) => acc.concat(c),[9])), 500]);
+    // if we are at less than 10, then render the y axis from 0 to 10
+    if (this.frame.yMax < 10) {
+      this.frame.yMax = 10;
+      this.frame.yScale.domain([0, this.frame.yMax]).range([this.frame.height - this.frame.margins.panels.upperGap + this.frame.margins.top, 2 * this.frame.margins.intervals.bar]).nice();
+    } else { // else render the y axis from 0 to 10 and then in orders of 10
+      this.frame.yMax = 10 * Math.ceil(this.frame.yMax / 10  + 1);
+      this.frame.yScale.domain([0, 10, this.frame.yMax]).range([this.frame.height - this.frame.margins.panels.upperGap + this.frame.margins.top, 0.4 * (this.frame.height - this.frame.margins.panels.upperGap + this.frame.margins.top), 2 * this.frame.margins.intervals.bar]).nice();
+    }
+    this.frame.yAxis = d3.axisLeft(this.frame.yScale)
+      .tickSize(-this.frame.width)
+      .tickFormat(d3.format("d"))
+      .tickValues(d3.range(0, 10)
+      .concat(d3.range(10, 10 * Math.ceil(this.frame.yMax / 10  + 1), 10)));
   }
 
   zoomed(fragment) {
@@ -456,7 +484,6 @@ class BrushContainer {
       domain[1] = d3.max([domain[1], lowerBound + 1]);
     }
 
-
     // update the current brush
     fragment.scale.domain(domain);
     fragment.innerScale.domain(domain);
@@ -490,6 +517,9 @@ class BrushContainer {
     // update the chromosome axis
     this.renderChromoAxis();
 
+    // render the Y Axis
+    this.renderYAxis();
+
     // update the intervals
     this.renderIntervals();
 
@@ -504,6 +534,9 @@ class BrushContainer {
 
     // update the fragments note
     this.renderFragmentsDetails(this.panelDomainsDetails());
+
+    this.frame.url = `/index.html?file=${this.frame.dataFile}&location=${this.frame.note}`;
+    history.replaceState(this.frame.url, 'Project gGnome.js', this.frame.url);
   }
 
   renderClipPath() {
@@ -519,6 +552,7 @@ class BrushContainer {
   }
 
   renderBrushes() {
+
     var self = this;
 
     let brushSelection = this.frame.brushesContainer.selectAll('.brush')
@@ -604,7 +638,13 @@ class BrushContainer {
       .remove();
   }
 
+  renderYAxis() {
+    this.frame.panelsContainer.select('.axis.axis--y')
+      .call(this.frame.yAxis);
+  }
+
   renderChromoAxis() {
+
     let self = this;
 
     //Chromo Axis Top
@@ -1155,6 +1195,7 @@ class BrushContainer {
   }
 
   renderFragmentsNote(note) {
+    this.frame.note = note;
     d3.select('#fragmentsNote').text(note);
   }
 

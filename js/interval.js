@@ -3,15 +3,29 @@ class Interval extends Base {
   constructor(inter) {
     super();
     this.iid = inter.iid;
+    this.siid = inter.siid;
     this.chromosome = inter.chromosome;
     this.startPoint = inter.startPoint;
     this.endPoint = inter.endPoint;
-    this.intervalLength = this.endPoint - this.startPoint + 1;
+    this.intervalLength = this.endPoint - this.startPoint;
     this.y = inter.y;
     this.title = inter.title;
     this.type = inter.type;
     this.strand = inter.strand;
+    this.sequence = inter.sequence;
     this.errors = [];
+    this.attributes = [
+      {label: 'Chromosome', value: this.chromosome}, 
+      {label: 'Y', value: this.y}, 
+      {label: 'Start Point (chromosome)', value: d3.format(',')(this.startPoint)},
+      {label: 'End Point (chromosome)', value: d3.format(',')(this.endPoint - 1)}, // because endpoint is inclusive 
+      {label: 'Interval Length', value: d3.format(',')(this.intervalLength)}];
+    if (this.strand) {
+      this.attributes.push({label: 'Strand', value: this.strand});
+    }
+    if (this.sequence) {
+      this.attributes.push({label: 'Sequence', value: this.sequence});
+    }
   }
 
   valid() {
@@ -49,16 +63,19 @@ class Interval extends Base {
     return this.errors.length < 1;
   }
 
+  get isSubInterval() {
+    return this.mode === 'subinterval';
+  }
+
   // The title for the popover on the intervals
   get popoverTitle() {
-    return 'Interval #' + this.title;
+    return  ((this.siid > 0) ? 'Sub-' : '') + 'Interval #' + this.title;
   }
 
   // The content for the popover of the intervals
   get popoverContent() {
     let content = '';
-    [{label: 'Chromosome', value: this.chromosome}, {label: 'Y', value: this.y}, {label: 'Start Point (chromosome)', value: d3.format(',')(this.startPoint)},
-     {label: 'End Point (chromosome)', value: d3.format(',')(this.endPoint)}, {label: 'Interval Length', value: d3.format(',')(this.intervalLength)}, {label: 'Strand', value: this.strand}].forEach(function(e,j) {
+    this.attributes.forEach(function(e,j) {
        content += '<tr><td class="table-label" align="left" width="200" valign="top"><strong>' + e.label + ':</strong></td><td class="table-value" width="100" align="right" valign="top">' + e.value + '</td></tr>';
      });
     return '<div class="row"><div class="col-lg-12"><table width="0" border="0" align="left" cellpadding="0" cellspacing="0"><tbody>' + content + '</tbody></table></div></div>';
@@ -78,6 +95,8 @@ class Interval extends Base {
     title: ${this.title},
     type: ${this.type},
     strand: ${this.strand}
+    strand: ${this.strand}
+    sequence: ${this.sequence}
     `;
   }
 }

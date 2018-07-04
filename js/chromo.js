@@ -4,7 +4,7 @@ class Chromo {
     this.chromosome = chromoObject.chromosome;
     this.startPoint = chromoObject.startPoint;
     this.endPoint = chromoObject.endPoint;
-    this.length = this.endPoint - this.startPoint + 1;
+    this.length = this.endPoint - this.startPoint;
     this.color = chromoObject.color;
     this.scale = null;
     this.innerScale = null;
@@ -25,6 +25,10 @@ class Chromo {
 
   get chromoGenome() {
     return [this.scale.domain()[0] + 1, this.scale.domain()[1] - 1];
+  }
+
+  get domain() {
+    return `${this.chromosome}:${this.scale.domain()[0] + 1}-${this.scale.domain()[1] - 1}`;
   }
 
 }

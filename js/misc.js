@@ -1,7 +1,18 @@
 class Misc {
 
+  static getUrlParameter(name) {
+    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+    var results = regex.exec(window.location.search);
+    return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+  }
+
   static isString(obj) {
     return (Object.prototype.toString.call(obj) === '[object String]');
+  }
+
+  static power(x) {
+    return Math.pow(10, (Math.log10((x ^ (x >> 31)) - (x >> 31)) | 0) + 1);
   }
 
   static get chromosomeLabels() {
@@ -18,47 +29,8 @@ class Misc {
     });
   }
 
-  static get server() {
-    return 'http://localhost:8000'
-  }
-
   static alerting(text, type) {
     return $('#detail').append(`<div class="alert alert-${type}" role="alert">${text}</div>`);
-  }
-
-  static get metadata() {
-    var input = (function () {
-        var json = null;
-        $.ajax({
-            'async': false,
-            'global': false,
-            'url': Misc.server + '/metadata',
-            'dataType': 'json',
-            'success': (data) => {
-                json = data;
-            }
-        });
-        return json;
-    })();
-    return input.metadata;
-  }
-
-  static intervals(startPlace, endPlace) {
-    var input = (function () {
-        var json = null;
-        $.ajax({
-            'async': false,
-            'global': false,
-            'url': Misc.server + '/intervals',
-            'data': {"startPlace": startPlace, "endPlace": endPlace},
-            'dataType': 'json',
-            'success': (data) => {
-                json = data;
-            }
-        });
-        return json;
-    })();
-    return input.map((d,i) => { return new Interval(d)});
   }
 
   static get guid() {

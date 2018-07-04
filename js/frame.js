@@ -8,7 +8,7 @@ class Frame extends Base {
       modal: {width: 900, height: 300, top: 30, bottom: 30, left: 30, right: 30},
       legend: {bar: 30, upperGap: 0, lowerGap: 20, axisTop: 10},
       panels: {upperGap: 155, chromoGap: 155, lowerGap: 0, gap: 26, widthOffset: 1, legend: 50, label: 10, yAxisTitleGap: 20},
-      brushes: {upperGap: -10, height: 50},
+      brushes: {upperGap: -10, height: 50, minSelectionSize: 2},
       intervals: {bar: 10, gap: 20, geneBar: 2},
       genes: {textGap: 5, selectionSize: 2},
       walks: {bar: 10},
@@ -28,6 +28,7 @@ class Frame extends Base {
     this.dataInput = {};
     this.dataInput.metadata = [];
     this.dataInput.intervals = [];
+    this.dataInput.subintervals = [];
     this.dataInput.connections = [];
     this.dataInput.genes = [];
     this.genomeLength = null;
@@ -49,29 +50,47 @@ class Frame extends Base {
   }
 
   loadData(dataFile) {
+    this.dataFile = dataFile;
+    this.url = `/index.html?file=${this.dataFile}&location=${this.location}`;
+    history.replaceState(this.url, 'Project gGnome.js', this.url);
     d3.queue()
-      .defer(d3.json, dataFile)
+      .defer(d3.json, './json/' + dataFile)
       .defer(d3.json, './public/metadata.json')
-      .defer(d3.json, './public/genes.json')
       .awaitAll((error, results) => {
-        if (error) throw error;
+        if (error) return;
         this.dataInput = results[0];
         this.dataInput.metadata = results[1].metadata;
-        this.dataInput.genes = results[2].genes;
+        this.dataInput.sequences = results[1].sequences;
         this.render();
+    });
+  }
+
+  updateGenes() {
+    this.dataInput.genes.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
+    this.geneBins = {};
+      this.genes = this.dataInput.genes.filter((d, i) => d.type === 'gene').map((d, i) => {
+      let gene = new Gene(d);
+      gene.startPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.startPoint));
+      gene.endPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.endPoint));
+      gene.color = this.chromoBins[gene.chromosome].color;
+      gene.y = 0;
+      this.geneBins[gene.iid] = gene;
+      return gene;
     });
   }
 
   updateData() {
     if (this.dataInput === null) return;
     this.settings = this.dataInput.settings;
-    this.genomeLength = this.dataInput.metadata.reduce((acc, elem) => (acc + elem.endPoint - elem.startPoint + 1), 0);
+    this.dataInput.metadata.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
+    this.dataInput.intervals.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
+    this.genomeLength = this.dataInput.metadata.reduce((acc, elem) => (acc + elem.endPoint - elem.startPoint), 0);
     let boundary = 0;
     this.genomeScale = d3.scaleLinear().domain([0, this.genomeLength]).range([0, this.width]);
     this.chromoBins = this.dataInput.metadata.reduce((hash, element) => {
       let chromo = new Chromo(element);
-      chromo.scaleToGenome = d3.scaleLinear().domain([0, chromo.endPoint]).range([boundary, boundary + chromo.length - 1]);
-      chromo.scale = d3.scaleLinear().domain([0, chromo.endPoint]).range([this.genomeScale(boundary), this.genomeScale(boundary + chromo.length - 1)]);
+      chromo.scaleToGenome = d3.scaleLinear().domain([0, chromo.endPoint]).range([boundary, boundary + chromo.length]);
+      chromo.scale = d3.scaleLinear().domain([0, chromo.endPoint]).range([this.genomeScale(boundary), this.genomeScale(boundary + chromo.length)]);
       chromo.innerScale = d3.scaleLinear().domain([0, chromo.endPoint]).range([this.genomeScale(chromo.startPoint), this.genomeScale(chromo.endPoint)]);
       hash[element.chromosome] = chromo; 
       boundary += chromo.length;
@@ -101,24 +120,8 @@ class Frame extends Base {
       this.intervalBins[interval.iid] = interval;
       return interval;
     });
-    this.geneBins = {};
-      this.genes = this.dataInput.genes.filter((d, i) => d.type === 'gene').map((d, i) => {
-      let gene = new Gene(d);
-      gene.startPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.startPoint));
-      gene.endPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.endPoint));
-      gene.color = this.chromoBins[gene.chromosome].color;
-      gene.y = 0; //Math.round(Math.random() * 10);
-      this.geneBins[gene.iid] = gene;
-      return gene;
-    });
     this.yGeneScale = d3.scaleLinear().domain([10, 0]).range([0, this.margins.panels.upperGap - this.margins.panels.chromoGap]).nice();
-    this.yMax = d3.min([d3.max(this.dataInput.intervals.map((d, i) => d.y)), 500]);
-    if (this.yMax < 10) {
-      this.yScale = d3.scaleLinear().domain([0, 10]).range([this.height - this.margins.panels.upperGap + this.margins.top, 2 * this.margins.intervals.bar]).nice();
-    } else {
-      this.yScale = d3.scaleLinear().domain([0, 10, this.yMax]).range([this.height - this.margins.panels.upperGap + this.margins.top, 0.4 * (this.height - this.margins.panels.upperGap + this.margins.top), 2 * this.margins.intervals.bar]).nice();
-    }
-    this.yAxis = d3.axisLeft(this.yScale).tickSize(-this.width).tickFormat(d3.format("d")).tickValues(d3.range(0, 10).concat(d3.range(10, 10 * Math.round(this.yMax / 10) + 1, 10)));
+    this.yScale = d3.scaleLinear();
     this.connections = this.dataInput.connections.map((d, i) => {
       connection = new Connection(d);
       connection.pinpoint(this.intervalBins);
@@ -136,6 +139,7 @@ class Frame extends Base {
       this.walks = this.dataInput.walks.map((d, i) => {
         let walk = new Walk(d);
         walk.intervals = walk.iids.map((d, i) => {
+          d.endPoint += 1; // because endpoint is inclusive
           let interval = new WalkInterval(d, walk);
           interval.startPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.startPoint));
           interval.endPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.endPoint));
@@ -162,9 +166,59 @@ class Frame extends Base {
           return connection;
         });
       });
-
     }
-
+    d3.json('./public/genes.json', (error, results) => {
+      console.log('genes succesfully loaded!', error);
+      if (error) return;
+      this.dataInput.genes = results.genes;
+      this.updateGenes();
+    });
+    this.hasSubintervals = false;
+    d3.json('/subintervals/' + this.dataFile, (error, results) => {
+      console.log('subintervals succesfully loaded!', error);
+      if (error) return;
+      this.dataInput.subintervals = results.intervals;
+      this.dataInput.subconnections = results.connections;
+      this.hasSubintervals = this.dataInput.subintervals.length > 0;
+      this.dataInput.subintervals.map((d, i) => {
+        d.endPoint += 1; // because endpoint is inclusive
+        d.chromosome = this.intervalBins[d.iid].chromosome;
+        d.y = this.intervalBins[d.iid].y;
+        d.iid = d.siid + d.iid / Misc.power(this.dataInput.subintervals.length);
+        let interval = new Interval(d);
+        interval.mode = 'subinterval';
+        interval.startPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.startPoint));
+        interval.endPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.endPoint));
+        interval.color = interval.sequence ? this.dataInput.sequences[interval.sequence] : this.dataInput.sequences.backbone;
+        interval.shapeHeight = this.margins.walks.bar;
+        this.intervalBins[interval.iid] = interval;
+        this.intervals.push(interval);
+      });
+      d3.nest()
+      .key((d, i) => [d.startPlace, d.endPlace])
+      .entries(this.intervals.filter((d, i) => d.siid > 0))
+      .filter((d, i) => (d.values.length > 1))
+      .forEach((d, i) => {
+        d.values.forEach((e, j) => {
+          e.y = (j < 1) ? (e.y - 1) : (e.y + j); // position the parallel segments as stacked in a bubble
+        });
+      })
+      this.dataInput.subconnections.map((d, i) => {
+        d.cid = d.iid + d.scid / Misc.power(this.dataInput.subconnections.length);
+        d.source = Math.sign(d.source) * (Math.abs(d.source) + d.iid / Misc.power(this.dataInput.subintervals.length));
+        d.sink = Math.sign(d.sink) * (Math.abs(d.sink) + d.iid / Misc.power(this.dataInput.subintervals.length));
+        connection = new Connection(d);
+        connection.mode = 'subconnection';
+        connection.pinpoint(this.intervalBins);
+        connection.yScale = this.yScale;
+        connection.arc = d3.arc()
+          .innerRadius(0)
+          .outerRadius(this.margins.intervals.bar / 2)
+          .startAngle(0)
+          .endAngle((e, j) => e * Math.PI);
+        this.connections.push(connection);
+      });
+    });
   }
 
   render() {
@@ -187,7 +241,8 @@ class Frame extends Base {
 
     this.renderLegend();
     this.renderBrushes();
-    this.brushContainer.createDefaults(this.chromoBins['1'].chromoGenome);
+
+    this.runLocate((this.location ? this.location : this.chromoBins['1'].domain));
 
     this.renderGeneModal();
   }
@@ -196,11 +251,18 @@ class Frame extends Base {
     this.brushContainer.deleteBrush();
   }
 
-  runLocate(domainString) {
-    let chromosome = domainString.split(":")[0];
-    let range = domainString.split(':')[1].split('-');
-    let chromo = this.chromoBins[chromosome];
-    this.brushContainer.createDefaults([chromo.scaleToGenome(parseFloat(range[0])), chromo.scaleToGenome(parseFloat(range[1]))]);
+  runLocate(fullDomainString) {
+    this.runDelete();
+    fullDomainString.split(' | ').forEach((subdomainString, i) => {
+      let domains = [];
+      subdomainString.split(' ').forEach((domainString, j) => {
+        let chromosome = domainString.split(":")[0];
+        let range = domainString.split(':')[1].split('-');
+        let chromo = this.chromoBins[chromosome];
+        domains.push({chromosome: chromosome, chromo: chromo, range: range});
+      });
+      this.brushContainer.createDefaults([domains[0].chromo.scaleToGenome(parseFloat(domains[0].range[0])), domains[domains.length - 1].chromo.scaleToGenome(parseFloat(domains[domains.length - 1].range[1]))]); 
+    });
   }
 
   toggleGenesPanel() {
@@ -209,14 +271,6 @@ class Frame extends Base {
       this.walkConnections.forEach((d,i) => d.yScale = this.yWalkScale);
     }
     this.yGeneScale = d3.scaleLinear().domain([10, 0]).range([0, this.margins.panels.upperGap - this.margins.panels.chromoGap]).nice();
-    if (this.yMax < 10) {
-      this.yScale = d3.scaleLinear().domain([0, 10]).range([this.height - this.margins.panels.upperGap + this.margins.top, 2 * this.margins.intervals.bar]).nice();
-    } else {
-      this.yScale = d3.scaleLinear().domain([0, 10, this.yMax]).range([this.height - this.margins.panels.upperGap + this.margins.top, 0.4 * (this.height - this.margins.panels.upperGap + this.margins.top), 2 * this.margins.intervals.bar]).nice();
-    }
-    this.yAxis = d3.axisLeft(this.yScale).tickSize(-this.width).tickFormat(d3.format("d")).tickValues(d3.range(0, 10).concat(d3.range(10, 10 * Math.round(this.yMax / 10) + 1, 10)));
-    this.panelsContainer
-      .call(this.yAxis);
     let connection = null;
     this.connections.forEach((d,i) => d.yScale = this.yScale);
     this.panelsContainer
@@ -268,7 +322,7 @@ class Frame extends Base {
       .enter()
       .append('g')
       .attr('class', 'chromo-legend-container')
-      .attr('transform', (d, i) => ('translate(' + [d.chromoStartPosition, this.margins.legend.upperGap] + ')'))
+      .attr('transform', (d, i) => ('translate(' + [d.chromoStartPosition, this.margins.legend.upperGap] + ')'));
 
     chromoLegendContainer
       .append('rect')
@@ -300,8 +354,7 @@ class Frame extends Base {
     this.panelsContainer.append('g')
       .attr('class', 'axis axis--y')
       .classed('hidden', this.settings && this.settings.y_axis && !this.settings.y_axis.visible)
-      .attr('transform', 'translate(' + [0, 0] + ')')
-      .call(this.yAxis);
+      .attr('transform', 'translate(' + [0, 0] + ')');
 
     this.panelsContainer.append('g')
       .attr('class', 'y-axis-title')
