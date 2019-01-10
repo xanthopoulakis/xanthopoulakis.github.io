@@ -11,6 +11,7 @@ class Frame extends Base {
       brushes: {upperGap: -10, height: 50, minSelectionSize: 2},
       intervals: {bar: 10, gap: 20, geneBar: 2},
       genes: {textGap: 5, selectionSize: 2},
+      reads: {gap: 2, coverageHeight: 140, selectionSize: 2, minCoverageRadius: 6, maxCoverageRadius: 16, coverageTitle: 'Coverage', domainSizeLimit: 30000},
       walks: {bar: 10},
       defaults: {upperGapPanel: 155, upperGapPanelWithGenes: 360}};
     this.colorScale = d3.scaleOrdinal(d3.schemeCategory10.concat(d3.schemeCategory20b));
@@ -37,6 +38,8 @@ class Frame extends Base {
     this.intervals = [];
     this.genes = [];
     this.walks = [];
+    this.coveragePoints = [];
+    this.downsampledCoveragePoints = [];
     this.yWalkExtent = [];
     this.axis = null;
   }
@@ -49,8 +52,12 @@ class Frame extends Base {
     this.margins.defaults.upperGapPanelWithGenes = (this.height + this.margins.top - 2 * this.margins.intervals.bar + this.margins.panels.chromoGap + this.margins.panels.gap) / 2;
   }
 
-  loadData(dataFile) {
+  loadData(dataFile) { console.log(this.dataFile, dataFile);
+    if (this.dataFile && (this.dataFile !== dataFile)) {
+      this.location = null;
+    }
     this.dataFile = dataFile;
+    this.dataFileName = this.dataFile.substring(0, this.dataFile.length - 5);
     this.url = `index.html?file=${this.dataFile}&location=${this.location}`;
     history.replaceState(this.url, 'Project gGnome.js', this.url);
     d3.queue()
@@ -61,29 +68,64 @@ class Frame extends Base {
         this.dataInput = results[0];
         this.dataInput.metadata = results[1].metadata;
         this.dataInput.sequences = results[1].sequences;
+        this.coveragePointsThreshold = results[1].coveragePointsThreshold || this.margins.reads.domainSizeLimit;
+        this.coveragePoints = [];
+        this.downsampledCoveragePoints = [];
         this.render();
+        this.updateGenes();
+        this.updateCoveragePoints();
+    });
+  }
+
+  updateCoveragePoints() {
+    Papa.parse(window.location.origin + '/coverage/' + this.dataFileName + '.csv', {
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      header: true,
+      worker: true,
+      download: true,
+      complete: (results) => {
+        if (results) {
+          results.data.forEach((d,i) => {
+            d.color = this.chromoBins[d.chromosome].color;
+            d.place = this.chromoBins[d.chromosome].scaleToGenome(d.x);
+            this.coveragePoints.push(d);
+          })
+          for (let k = 0; k < d3.min([this.coveragePointsThreshold, results.data.length]); k++) {
+            let index = this.coveragePointsThreshold < results.data.length ? Math.floor(results.data.length * Math.random()) : k;
+            let coveragePoint = results.data[index];
+            this.downsampledCoveragePoints.push(coveragePoint);
+          }
+          // update the fragments
+          this.brushContainer.updateFragments(true);
+          // update the reads
+          this.brushContainer.renderReads();
+          toastr.success(`Loaded ${results.data.length} coverage records!`);
+        }
+      }
     });
   }
 
   updateGenes() {
-    this.dataInput.genes.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
-    this.geneBins = {};
-      this.genes = this.dataInput.genes.filter((d, i) => d.type === 'gene').map((d, i) => {
-      let gene = new Gene(d);
-      gene.startPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.startPoint));
-      gene.endPlace = Math.floor(this.chromoBins[gene.chromosome].scaleToGenome(gene.endPoint));
-      gene.color = this.chromoBins[gene.chromosome].color;
-      gene.y = 0;
-      this.geneBins[gene.iid] = gene;
-      return gene;
-    });
+    if (this.genes.length > 0) return;
+    // load the workers
+    var worker = new Worker('js/genes-worker.js');
+    // Setup an event listener that will handle messages received from the worker.
+    worker.addEventListener('message', (e) => {
+      this.dataInput.genes = e.data.dataInput.genes;
+      this.genes = e.data.genes;
+      this.geneBins = e.data.geneBins;
+      toastr.success(`Loaded ${this.dataInput.genes.length} gene records!`);
+    }, false);
+    worker.postMessage({dataInput: {metadata: this.dataInput.metadata, genes: []}, geneBins: {}, width: this.width});
   }
 
   updateData() {
     if (this.dataInput === null) return;
+    console.log('called updateData with dataInput!');
     this.settings = this.dataInput.settings;
-    this.dataInput.metadata.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
-    this.dataInput.intervals.forEach((d, i) => { d.endPoint += 1 }); // because endpoint is inclusive
+    this.dataInput.metadata.forEach((d,i) => { d.endPoint += 1 }); // because endpoint is inclusive
+    this.dataInput.intervals.forEach((d,i) => { d.endPoint += 1 }); // because endpoint is inclusive
     this.genomeLength = this.dataInput.metadata.reduce((acc, elem) => (acc + elem.endPoint - elem.startPoint), 0);
     let boundary = 0;
     this.genomeScale = d3.scaleLinear().domain([0, this.genomeLength]).range([0, this.width]);
@@ -102,7 +144,7 @@ class Frame extends Base {
       .object(this.dataInput.intervals);
     let interval = null, gene = null, connection = null, intervalLength, extentSize;
     this.intervalBins = {};
-    this.intervals = this.dataInput.intervals.map((d, i) => {
+    this.intervals = this.dataInput.intervals.map((d,i) => {
       if (this.settings && this.settings.y_axis && !this.settings.y_axis.visible) {
         intervalLength = d.endPoint - d.startPoint;
         if (intervalLength > (0.1 * lengthExtent[d.chromosome][1])) {
@@ -122,7 +164,7 @@ class Frame extends Base {
     });
     this.yGeneScale = d3.scaleLinear().domain([10, 0]).range([0, this.margins.panels.upperGap - this.margins.panels.chromoGap]).nice();
     this.yScale = d3.scaleLinear();
-    this.connections = this.dataInput.connections.map((d, i) => {
+    this.connections = this.dataInput.connections.map((d,i) => {
       connection = new Connection(d);
       connection.pinpoint(this.intervalBins);
       connection.yScale = this.yScale;
@@ -136,9 +178,9 @@ class Frame extends Base {
     if (this.dataInput.walks) {
       this.walkIntervals = [];
       this.walkConnections = [];
-      this.walks = this.dataInput.walks.map((d, i) => {
+      this.walks = this.dataInput.walks.map((d,i) => {
         let walk = new Walk(d);
-        walk.intervals = walk.iids.map((d, i) => {
+        walk.intervals = walk.iids.map((d,i) => {
           d.endPoint += 1; // because endpoint is inclusive
           let interval = new WalkInterval(d, walk);
           interval.startPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.startPoint));
@@ -150,10 +192,10 @@ class Frame extends Base {
         });
         return walk;
       });
-      this.yWalkExtent = d3.extent(this.walkIntervals.map((d, i) => d.y)).reverse();
+      this.yWalkExtent = d3.extent(this.walkIntervals.map((d,i) => d.y)).reverse();
       this.yWalkScale = d3.scaleLinear().domain(this.yWalkExtent).range([this.margins.panels.gap, this.margins.panels.upperGap - this.margins.panels.chromoGap - this.margins.panels.gap]).nice();
       this.walks.forEach((walk, i) => {
-        walk.connections = walk.cids.map((d, i) => {
+        walk.connections = walk.cids.map((d,i) => {
           let connection = new WalkConnection(d, walk);
           connection.pinpoint();
           connection.yScale = this.yWalkScale;
@@ -167,63 +209,24 @@ class Frame extends Base {
         });
       });
     }
-    d3.json('./public/genes.json', (error, results) => {
-      console.log('genes succesfully loaded!', error);
-      if (error) return;
-      this.dataInput.genes = results.genes;
-      this.updateGenes();
-    });
     this.hasSubintervals = false;
-    d3.json('/subintervals/' + this.dataFile, (error, results) => {
-      console.log('subintervals succesfully loaded!', error);
-      if (error) return;
-      this.dataInput.subintervals = results.intervals;
-      this.dataInput.subconnections = results.connections;
-      this.hasSubintervals = this.dataInput.subintervals.length > 0;
-      this.dataInput.subintervals.map((d, i) => {
-        d.endPoint += 1; // because endpoint is inclusive
-        d.chromosome = this.intervalBins[d.iid].chromosome;
-        d.y = this.intervalBins[d.iid].y;
-        d.iid = d.siid + d.iid / Misc.power(this.dataInput.subintervals.length);
-        let interval = new Interval(d);
-        interval.mode = 'subinterval';
-        interval.startPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.startPoint));
-        interval.endPlace = Math.floor(this.chromoBins[interval.chromosome].scaleToGenome(interval.endPoint));
-        interval.color = interval.sequence ? this.dataInput.sequences[interval.sequence] : this.dataInput.sequences.backbone;
-        interval.shapeHeight = this.margins.walks.bar;
-        this.intervalBins[interval.iid] = interval;
-        this.intervals.push(interval);
-      });
-      d3.nest()
-      .key((d, i) => [d.startPlace, d.endPlace])
-      .entries(this.intervals.filter((d, i) => d.siid > 0))
-      .filter((d, i) => (d.values.length > 1))
-      .forEach((d, i) => {
-        d.values.forEach((e, j) => {
-          e.y = (j < 1) ? (e.y - 1) : (e.y + j); // position the parallel segments as stacked in a bubble
-        });
-      })
-      this.dataInput.subconnections.map((d, i) => {
-        d.cid = d.iid + d.scid / Misc.power(this.dataInput.subconnections.length);
-        d.source = Math.sign(d.source) * (Math.abs(d.source) + d.iid / Misc.power(this.dataInput.subintervals.length));
-        d.sink = Math.sign(d.sink) * (Math.abs(d.sink) + d.iid / Misc.power(this.dataInput.subintervals.length));
-        connection = new Connection(d);
-        connection.mode = 'subconnection';
-        connection.pinpoint(this.intervalBins);
-        connection.yScale = this.yScale;
-        connection.arc = d3.arc()
-          .innerRadius(0)
-          .outerRadius(this.margins.intervals.bar / 2)
-          .startAngle(0)
-          .endAngle((e, j) => e * Math.PI);
-        this.connections.push(connection);
-      });
-    });
   }
 
   render() {
     // Clear any existing svg
     this.plotContainer.selectAll('svg').remove();
+    // Clear any existing canvas
+    this.plotContainer.selectAll('canvas').remove();
+
+    this.canvas = this.plotContainer.append('canvas')
+      .attr('class', 'plot')
+      .attr('id', 'coverage-canvas')
+      .attr('width', this.totalWidth)
+      .attr('height', this.totalHeight);
+
+    this.reglCanvas = new ReglCanvas('coverage-canvas');
+    this.ctxCanvas = this.canvas.node().getContext('2d');
+
     // Add the svg container
     this.svg = this.plotContainer.append('svg')
       .attr('class', 'plot')
@@ -252,17 +255,25 @@ class Frame extends Base {
   }
 
   runLocate(fullDomainString) {
-    this.runDelete();
-    fullDomainString.split(' | ').forEach((subdomainString, i) => {
-      let domains = [];
-      subdomainString.split(' ').forEach((domainString, j) => {
-        let chromosome = domainString.split(":")[0];
-        let range = domainString.split(':')[1].split('-');
-        let chromo = this.chromoBins[chromosome];
-        domains.push({chromosome: chromosome, chromo: chromo, range: range});
+    if ((/^\s*$/).test(fullDomainString)) return;
+    if (fullDomainString.includes(':')) {
+      this.runDelete();
+      fullDomainString.split(' | ').forEach((subdomainString, i) => {
+        let domains = [];
+        subdomainString.split(' ').forEach((domainString, j) => {
+          let chromosome = domainString.split(":")[0];
+          let range = domainString.split(':')[1].split('-');
+          let chromo = this.chromoBins[chromosome];
+          domains.push({chromosome: chromosome, chromo: chromo, range: range});
+        });
+        this.brushContainer.createDefaults([domains[0].chromo.scaleToGenome(parseFloat(domains[0].range[0])), domains[domains.length - 1].chromo.scaleToGenome(parseFloat(domains[domains.length - 1].range[1] - 1))]); 
       });
-      this.brushContainer.createDefaults([domains[0].chromo.scaleToGenome(parseFloat(domains[0].range[0])), domains[domains.length - 1].chromo.scaleToGenome(parseFloat(domains[domains.length - 1].range[1]))]); 
-    });
+    } else {
+      let matchedGenes = this.genes.filter(d => d.title === fullDomainString);
+      if (matchedGenes.length > 0) {
+        this.brushContainer.createDefaults([matchedGenes[0].startPlace, matchedGenes[0].endPlace]);  
+      }
+    }
   }
 
   toggleGenesPanel() {
@@ -271,6 +282,7 @@ class Frame extends Base {
       this.walkConnections.forEach((d,i) => d.yScale = this.yWalkScale);
     }
     this.yGeneScale = d3.scaleLinear().domain([10, 0]).range([0, this.margins.panels.upperGap - this.margins.panels.chromoGap]).nice();
+    this.yCoverageScale = d3.scaleLinear().range([this.margins.reads.gap, this.margins.panels.upperGap - this.margins.panels.chromoGap]);
     let connection = null;
     this.connections.forEach((d,i) => d.yScale = this.yScale);
     this.panelsContainer
@@ -283,6 +295,7 @@ class Frame extends Base {
       .attr('transform', 'translate(' + [-this.margins.panels.yAxisTitleGap, 0.5 * (this.height - this.margins.panels.upperGap + this.margins.top)] + ')rotate(-90)');
     this.genesContainer.classed('hidden', !this.showGenes);
     this.walksContainer.classed('hidden', !this.showWalks);
+    this.readsContainer.classed('hidden', !this.showReads);
     this.walkConnectionsContainer.classed('hidden', !this.showWalks);
     this.brushContainer.update();
   }
@@ -318,28 +331,28 @@ class Frame extends Base {
       .style('stroke', 'black');
 
     let chromoLegendContainer = this.controlsContainer.selectAll('g.chromo-legend-container')
-      .data(Object.values(this.chromoBins), (d, i) => d.chromosome)
+      .data(Object.values(this.chromoBins), (d,i) => d.chromosome)
       .enter()
       .append('g')
       .attr('class', 'chromo-legend-container')
-      .attr('transform', (d, i) => ('translate(' + [d.chromoStartPosition, this.margins.legend.upperGap] + ')'));
+      .attr('transform', (d,i) => ('translate(' + [d.chromoStartPosition, this.margins.legend.upperGap] + ')'));
 
     chromoLegendContainer
       .append('rect')
       .attr('class', 'chromo-box')
-      .attr('width', (d, i) => d.chromoWidth)
+      .attr('width', (d,i) => d.chromoWidth)
       .attr('height', this.margins.legend.bar)
       .style('opacity', 0.66)
-      .style('fill', (d, i) => d.color)
-      .style('stroke', (d, i) => d3.rgb(d.color).darker(1));
+      .style('fill', (d,i) => d.color)
+      .style('stroke', (d,i) => d3.rgb(d.color).darker(1));
 
     chromoLegendContainer
       .append('text')
       .attr('class', 'chromo-text')
-      .attr('dx', (d, i) => d.chromoWidth / 2)
-      .attr('dy', (d, i) => 0.62 * this.margins.legend.bar)
+      .attr('dx', (d,i) => d.chromoWidth / 2)
+      .attr('dy', (d,i) => 0.62 * this.margins.legend.bar)
       .attr('text-anchor', 'middle')
-      .text((d, i) => d.chromosome);
+      .text((d,i) => d.chromosome);
   }
 
   renderBrushes() {
@@ -381,6 +394,35 @@ class Frame extends Base {
       .classed('walks-container', true)
       .classed('hidden', !this.showWalks)
       .attr('transform', 'translate(' + [this.margins.left, this.margins.panels.chromoGap] + ')');
+
+    this.readsContainer = this.svg.append('g')
+      .classed('reads-container', true)
+      .classed('hidden', !this.showReads)
+      .attr('transform', 'translate(' + [this.margins.left, this.margins.panels.chromoGap] + ')');
+
+    this.readsContainer.append('g')
+      .attr('class', 'axis axis--y')
+      .attr('transform', 'translate(' + [0, 0] + ')');
+
+    this.readsContainer.append('g')
+      .attr('class', 'y-axis-title')
+      .attr('transform', 'translate(' + [-this.margins.panels.yAxisTitleGap,  + 0.5 * (this.margins.reads.gap + this.margins.panels.upperGap)] + ')rotate(-90)')
+      .append('text')
+      .attr('text-anchor', 'middle')
+      .text(this.margins.reads.coverageTitle);
+
+    this.readsContainer
+      .append('rect')
+      .attr('class', 'loading-box hidden')
+      .attr('width', this.width)
+      .attr('height', this.margins.top + this.margins.panels.upperGap - this.margins.reads.gap);
+
+    this.readsContainer
+      .append('text')
+      .attr('class', 'loading hidden')
+      .attr('transform', 'translate(' + [this.width/2, + 0.5 * (this.margins.top + this.margins.panels.upperGap)] + ')')
+      .attr('text-anchor', 'middle')
+      .text('loading ...');
 
     this.shapesContainer = this.svg.append('g')
       .attr('class', 'shapes-container')

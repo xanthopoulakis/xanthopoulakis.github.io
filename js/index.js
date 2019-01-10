@@ -37,7 +37,7 @@ $(function() {
     $('#' + dataSelector).selectpicker('hide');
 
     d3.json('/datafiles', results => {
-      $('#' + dataSelector).html(results.files.map((d, i) => `<option value="${d.file}">${d.name}</option>`).join(''));
+      $('#' + dataSelector).html(results.files.map((d,i) => `<option value="${d.file}">${d.name}</option>`).join(''));
       $('#' + dataSelector).selectpicker('refresh');
       $('#' + dataSelector).selectpicker('show');
       if (results.files.filter((d,i) => d.name === currentFile).length > 0) {
@@ -47,7 +47,10 @@ $(function() {
     });
 
     // Act upon json reload
-    $('#' + dataSelector).on('rendered.bs.select', event => {
+    $('#' + dataSelector).on('refreshed.bs.select', event => {
+      frame.loadData($('#' + dataSelector).val());
+    });
+    $('#' + dataSelector).on('changed.bs.select', event => {
       frame.loadData($('#' + dataSelector).val());
     });
   }
@@ -64,22 +67,38 @@ $(function() {
   });
 
   $('#gene-checkbox').on('click', (event) => {
-    $('#walk-checkbox').removeAttr('checked'); 
+    $('#walk-checkbox').removeAttr('checked');
+    $('#read-checkbox').removeAttr('checked');
     frame.margins.panels.upperGap = $('#gene-checkbox').is(":checked") ? 
       0.6 * frame.height: 
       frame.margins.defaults.upperGapPanel;
     frame.showGenes = $('#gene-checkbox').is(":checked");
     frame.showWalks = $('#walk-checkbox').is(":checked");
+    frame.showReads = $('#read-checkbox').is(":checked");
     frame.toggleGenesPanel();
   });
 
   $('#walk-checkbox').on('click', (event) => {
-    $('#gene-checkbox').removeAttr('checked'); 
+    $('#gene-checkbox').removeAttr('checked');
+    $('#read-checkbox').removeAttr('checked');
     frame.margins.panels.upperGap = $('#walk-checkbox').is(":checked") ? 
       0.8 * frame.height: 
       frame.margins.defaults.upperGapPanel;
     frame.showGenes = $('#gene-checkbox').is(":checked");
     frame.showWalks = $('#walk-checkbox').is(":checked");
+    frame.showReads = $('#read-checkbox').is(":checked");
+    frame.toggleGenesPanel();
+  });
+
+  $('#read-checkbox').on('click', (event) => {
+    $('#walk-checkbox').removeAttr('checked');
+    $('#gene-checkbox').removeAttr('checked');
+    frame.margins.panels.upperGap = $('#read-checkbox').is(":checked") ? 
+      0.6 * frame.height: 
+      frame.margins.defaults.upperGapPanel;
+    frame.showGenes = $('#gene-checkbox').is(":checked");
+    frame.showWalks = $('#walk-checkbox').is(":checked");
+    frame.showReads = $('#read-checkbox').is(":checked");
     frame.toggleGenesPanel();
   });
 
@@ -155,6 +174,63 @@ $(function() {
     }
 
     document.body.removeChild(textArea);
+  });
+
+  $('#coverage-button').click(() => {
+    $('#coverage-modal').modal({
+      backdrop: 'static',
+      keyboard: false
+    });
+  }); 
+
+  // We can attach the `fileselect` event to all file inputs on the page
+  $(document).on('change', ':file', function() {
+    var input = $(this),
+    numFiles = input.get(0).files ? input.get(0).files.length : 1,
+    label = input.val().replace(/\\/g, '/').replace(/.*\//, '');
+    input.trigger('fileselect', [numFiles, label, input.get(0).files[0]]);
+  });
+
+  // We can watch for our custom `fileselect` event like this
+  $(document).ready( function() {
+    $(':file').on('fileselect', function(event, numFiles, label, file) {
+      $('#coverage-help').html('Loading coverage points ...');
+      d3.select('#coverage-submit').attr('data-dismiss', 'modal0').classed('disabled', true);
+      var input = $(this).parents('.input-group').find(':text'),
+      log = numFiles > 1 ? numFiles + ' files selected' : label;
+      if( input.length ) {
+        input.val(log);
+      } else {
+        if( log ) alert(log);
+      }
+      let t1 = new Date();
+      Papa.parse(file, {
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        header: true,
+        complete: function(results) {
+          console.log("All done!");
+          results.data.forEach((d,i) => {
+            d.color = frame.chromoBins[d.chromosome].color;
+            d.place = frame.chromoBins[d.chromosome].scaleToGenome(d.x);
+            frame.coveragePoints.push(d);
+          })
+          for (let k = 0; k < d3.min([frame.coveragePointsThreshold, results.data.length]); k++) {
+            let index = frame.coveragePointsThreshold < results.data.length ? Math.floor(results.data.length * Math.random()) : k;
+            let coveragePoint = results.data[index];
+            frame.downsampledCoveragePoints.push(coveragePoint);
+          }
+          // update the fragments
+          frame.brushContainer.updateFragments(true);
+          // update the reads
+          frame.brushContainer.renderReads();
+
+          $('#coverage-help').html(`Successfully loaded ${results.data.length} records in ${(new Date() - t1) / 1000} seconds.`);
+          d3.select('#coverage-submit').attr('data-dismiss', 'modal').classed('disabled', false);
+        }
+      });
+
+    });
   });
 
   function download(filename, text) {

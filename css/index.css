@@ -9,9 +9,14 @@
 }
 /* Main SVG styling */
 svg.plot {
-  border: 1px solid transparent;
+  fill: transparent;
+  background: transparent;
 }
-
+canvas.plot {
+  position: absolute;
+  margin: 0px;
+  z-index: -1000;
+}
 .brush .selection {
   stroke: steelblue;
   fill-opacity: .125;
@@ -20,6 +25,24 @@ svg.plot {
 
 .highlighted .selection {
   stroke: orange;
+  stroke-width: 2;
+}
+rect.loading-box {
+  fill: lightgray;
+  stroke: gray;
+  opacity: 0.66;
+  stroke-width: 1px;
+}
+text.loading {
+  stroke: steelblue !important;
+  fill: steelblue !important;
+  font: 16px sans-serif;
+  font-weight: normal;
+  shape-rendering: "optimizeQuality";
+}
+circle.highlighted {
+  stroke: orange !important;
+  fill: white !important;
   stroke-width: 2;
 }
 
@@ -33,6 +56,12 @@ svg.plot {
   fill: steelblue;
   pointer-events: none;
   user-select: none;
+}
+
+g.reads-container .axis--y g.tick line {
+  stroke: #777;
+  stroke-dasharray: 2,2;
+  opacity: 0.3;
 }
 
 .axis--y g.tick line {
@@ -117,6 +146,7 @@ text.chromo-text {
   user-select: none;
 }
 text.label-magnitude {
+  fill: #000;
   pointer-events: none;
   user-select: none;
 }
@@ -161,6 +191,6 @@ div.popover .table-value {
   vertical-align: middle;
 }
 /* Locate Modal window styling */
-#locate-modal-body {
+.custom-modal-body {
   padding: 20px 20px 5px;
 }
