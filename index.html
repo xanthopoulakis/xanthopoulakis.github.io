@@ -61,44 +61,76 @@
         </div>
       </div>
       <div class="modal fade" id="plot-container-gene-modal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true" style="display: none;">
-          <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content" style="overflow: hidden;">
+            <div class="modal-header">
+              <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+              <h4 id="gene-modal-title" class="modal-title"></h4>
+            </div>
+            <div id="gene-modal-body" class="modal-body" style="max-height: 1010px; overflow-y: auto;">
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+          </div>
+          <!-- /.modal-content -->
+        </div>
+        <!-- /.modal-dialog -->
+      </div>
+      <div class="modal fade" id="locate-modal" tabindex="-1" role="dialog" aria-labelledby="locate-modal" aria-hidden="true" style="display: none;">
+        <div class="modal-dialog modal-lg">
+          <form id="locate-form" role="form">  
             <div class="modal-content" style="overflow: hidden;">
               <div class="modal-header">
                 <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
-                <h4 id="gene-modal-title" class="modal-title"></h4>
+                <h4 id="locate-modal-title" class="modal-title">Loci of interest</h4>
               </div>
-              <div id="gene-modal-body" class="modal-body" style="max-height: 1010px; overflow-y: auto;">
+              <div id="locate-modal-body" class="modal-body custom-modal-body">
+                <div class="form-group">
+                  <input type="text" class="form-control" id="locate-input" placeholder="e.g. 22:12492333-27035862">
+                </div>
               </div>
               <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="submit" id="locate-submit" class="btn btn-info btn-block" data-dismiss="modal">Locate</button>
               </div>
             </div>
-            <!-- /.modal-content -->
-          </div>
-          <!-- /.modal-dialog -->
+          </form>
+          <!-- /.modal-content -->
         </div>
-        <div class="modal fade" id="locate-modal" tabindex="-1" role="dialog" aria-labelledby="locate-modal" aria-hidden="true" style="display: none;">
-            <div class="modal-dialog modal-lg">
-              <form id="locate-form" role="form">  
-                <div class="modal-content" style="overflow: hidden;">
-                  <div class="modal-header">
-                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
-                    <h4 id="locate-modal-title" class="modal-title">Loci of interest</h4>
-                  </div>            
-                  <div id="locate-modal-body" class="modal-body">
-                    <div class="form-group">
-                      <input type="text" class="form-control" id="locate-input" placeholder="e.g. 22:12492333-27035862">
-                    </div>                   
+        <!-- /.modal-dialog -->
+      </div>
+      <div class="modal fade" id="coverage-modal" tabindex="-1" role="dialog" aria-labelledby="coverage-modal" aria-hidden="true" style="display: none;">
+        <div class="modal-dialog modal-lg">
+          <form id="coverage-form" role="form">  
+            <div class="modal-content" style="overflow: hidden;">
+              <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+                <h4 id="coverage-modal-title" class="modal-title">Coverage Points File Loader</h4>
+              </div>
+              <div id="coverage-modal-body" class="modal-body custom-modal-body">
+                <div class="form-group">
+                  <div class="input-group">
+                    <label class="input-group-btn">
+                      <span class="btn btn-primary">
+                        Browse&hellip; <input type="file" style="display: none;" accept=".csv">
+                      </span>
+                    </label>
+                    <input id="file-input" type="text" class="form-control" readonly accept=".csv">
                   </div>
-                  <div class="modal-footer">
-                    <button type="submit" id="locate-submit" class="btn btn-info btn-block" data-dismiss="modal">Locate</button>
-                  </div>                
+                  <span class="help-block" id="coverage-help">
+                    Try selecting one and watch the feedback
+                  </span>
                 </div>
-              </form>
-              <!-- /.modal-content -->
+              </div>
+              <div class="modal-footer">
+                <button type="submit" id="coverage-submit" class="btn btn-info btn-block" data-dismiss="modal">OK</button>
+              </div>
             </div>
-            <!-- /.modal-dialog -->
-          </div>
+          </form>
+          <!-- /.modal-content -->
+        </div>
+        <!-- /.modal-dialog -->
+      </div>
     </div>
     <a href="data:text/plain;charset=utf-8" id="downloadLink" download="export.txt" style="display: none;"></a>
   </div>
@@ -107,12 +139,17 @@
   <script src="./js/external/bootstrap.min.js"></script>
   <script src="./js/external/bootstrap-select.min.js"></script>
   <script src="./js/external/d3.min.js"></script>
+  <script src="./js/external/d3-contour.v1.min.js"></script>
   <script src="./js/external/d3-scale-chromatic.v0.3.min.js"></script>
   <script src="./js/external/d3-collection.v1.min.js"></script>
   <script src="./js/external/d3-dispatch.v1.min.js"></script>
   <script src="./js/external/d3-dsv.v1.min.js"></script>
   <script src="./js/external/d3-request.v1.min.js"></script>
   <script src="./js/external/d3-queue.v3.min.js"></script>
+  <script src="./js/external/d3-hexbin.v0.2.min.js"></script>
+  <script src="./js/external/papaparse.min.js"></script>
+  <script src="./js/external/toastr.min.js"></script>
+  <script src="./js/external/regl.js"></script>
   <script src="./js/index.js"></script>
   <script src="./js/misc.js"></script>
   <script src="./js/combinations.js"></script>
@@ -121,6 +158,9 @@
   <script src="./js/gene.js"></script>
   <script src="./js/walk-interval.js"></script>
   <script src="./js/walk.js"></script>
+  <script src="./js/read-interval.js"></script>
+  <script src="./js/read.js"></script>
+  <script src="./js/coverage-point.js"></script>
   <script src="./js/connection.js"></script>
   <script src="./js/walk-connection.js"></script>
   <script src="./js/frame.js"></script>
@@ -128,5 +168,6 @@
   <script src="./js/chromo.js"></script>
   <script src="./js/brush-container.js"></script>
   <script src="./js/fragment.js"></script>
+  <script src="./js/regl-canvas.js"></script>
 </body>
 </html>
