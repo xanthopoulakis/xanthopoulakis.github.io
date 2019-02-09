@@ -1,5 +1,6 @@
 {
   "settings": {
+    "description": "This is the <strong>HCC1143</strong> genome dataset",
     "y_axis": {
       "title": "copy number",
       "visible": true
