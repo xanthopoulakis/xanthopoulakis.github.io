@@ -4,6 +4,7 @@ $(function() {
   var throttleTimer;
   var plotContainerId = 'plot-container';
   var dataSelector = 'data-selector';
+  var tagsSelector = 'tags-selector';
   var totalWidth = $('#' + plotContainerId).width();
   var totalHeight = $(window).height() - $('#' + plotContainerId).offset().top;
   var currentLocation = Misc.getUrlParameter('location');
@@ -13,13 +14,16 @@ $(function() {
   // set the default location as parsed from the url
   frame.location = currentLocation;
 
-  d3.csv('datafiles.csv', (error, results) => { console.log(error, results)
+  d3.csv('datafiles.csv', (error, results) => {
     if (error) {
       d3.csv('datafiles', (res) => {
+        d3.select('#tags-selector').classed('hidden', true);
         populateComboBox(res);
       });
     } else {
+      d3.select('#tags-selector').classed('hidden', false);
       populateComboBox(results);
+      populateTags(results);
     }
   });
 
@@ -32,42 +36,6 @@ $(function() {
       frame.updateDimensions(totalWidth, totalHeight);
       frame.render();
     }, 200);
-  });
-
-  $('#gene-checkbox').on('click', (event) => {
-    $('#walk-checkbox').removeAttr('checked');
-    $('#read-checkbox').removeAttr('checked');
-    frame.margins.panels.upperGap = $('#gene-checkbox').is(":checked") ? 
-      0.6 * frame.height: 
-      frame.margins.defaults.upperGapPanel;
-    frame.showGenes = $('#gene-checkbox').is(":checked");
-    frame.showWalks = $('#walk-checkbox').is(":checked");
-    frame.showReads = $('#read-checkbox').is(":checked");
-    frame.toggleGenesPanel();
-  });
-
-  $('#walk-checkbox').on('click', (event) => {
-    $('#gene-checkbox').removeAttr('checked');
-    $('#read-checkbox').removeAttr('checked');
-    frame.margins.panels.upperGap = $('#walk-checkbox').is(":checked") ? 
-      0.8 * frame.height: 
-      frame.margins.defaults.upperGapPanel;
-    frame.showGenes = $('#gene-checkbox').is(":checked");
-    frame.showWalks = $('#walk-checkbox').is(":checked");
-    frame.showReads = $('#read-checkbox').is(":checked");
-    frame.toggleGenesPanel();
-  });
-
-  $('#read-checkbox').on('click', (event) => {
-    $('#walk-checkbox').removeAttr('checked');
-    $('#gene-checkbox').removeAttr('checked');
-    frame.margins.panels.upperGap = $('#read-checkbox').is(":checked") ? 
-      0.6 * frame.height: 
-      frame.margins.defaults.upperGapPanel;
-    frame.showGenes = $('#gene-checkbox').is(":checked");
-    frame.showWalks = $('#walk-checkbox').is(":checked");
-    frame.showReads = $('#read-checkbox').is(":checked");
-    frame.toggleGenesPanel();
   });
 
   $('#locate-submit').on('click', (event) => {
@@ -151,6 +119,20 @@ $(function() {
     });
   }); 
 
+  $('#validate-button').click(() => {
+    window.location.href = "validator.html";
+  }); 
+
+  $('.content .ui.dropdown').dropdown({
+    onChange: (value, text, $selectedItem) => {
+      frame.margins.panels.upperGap = (value !== 'intervals') ? 0.8 * frame.height : frame.margins.defaults.upperGapPanel;
+      frame.showGenes = (value === 'genes');
+      frame.showWalks = (value === 'walks');
+      frame.showReads = (value === 'coverage');
+      frame.toggleGenesPanel();
+    }
+  });
+
   // We can attach the `fileselect` event to all file inputs on the page
   $(document).on('change', ':file', function() {
     var input = $(this),
@@ -211,10 +193,11 @@ $(function() {
     element.click();
   };
 
-  function populateComboBox(results) {
+  function populateComboBox(results) { console.log(results.length)
     $(`#${dataSelector}`)
       .dropdown({
         clearable: true,
+        compact: true,
         on: 'hover',
         values: results.map((d,i) => {return {name: (d.description ? `<span class="description">${d.description}</span><span class="text">${d.datafile}</span>` : d.datafile), value: d.datafile, selected: (Misc.getUrlParameter('file') === d.datafile) || (i === 0)}}),
         fullTextSearch: true,
@@ -225,6 +208,31 @@ $(function() {
           }
         }
     });
+  }
+
+  function populateTags(results) {
+    let tags = [ ...new Set(results.map((d,i) => d.description.split('|')).flat())].sort();
+    $(`#${tagsSelector}`)
+      .dropdown({
+        placeholder: 'Filter tags',
+        clearable: true,
+        on: 'hover',
+        action: 'activate',
+        values: tags.map((d,i) => {return {name: d, value: d}}),
+        onChange: (value, text, $selectedItem) => {
+          let filtered = [...results];
+          if (value) {
+            filtered = results.filter((d,i) => value.split(',').map((v) => d.description.split('|').includes(v)).flat().reduce((a,b) => a && b, true)); 
+          }
+          let values = filtered.map((d,i) => {return {name: (d.description ? `<span class="description">${d.description}</span><span class="text">${d.datafile}</span>` : d.datafile), value: d.datafile}});
+          $('#data-selector').dropdown('clear');
+          $('#data-selector').dropdown('setup menu', {values: values});
+          if (values.length > 0) {
+            $('#data-selector').dropdown('set exactly', values[0].value);
+          }
+        }
+    });
+    
   }
 });
 
