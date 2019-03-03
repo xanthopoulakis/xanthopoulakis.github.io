@@ -130,7 +130,7 @@ class BrushContainer {
         self.update();
 
         // update the url state
-        self.frame.url = `index.html?file=${self.frame.dataFile}&location=${self.frame.note}`;
+        self.frame.url = `index.html?file=${self.frame.dataFile}&location=${self.frame.note}&view=${self.frame.view}`;
         history.replaceState(self.frame.url, 'Project gGnome.js', self.frame.url);
     });
 
@@ -591,7 +591,7 @@ class BrushContainer {
     if (d3.event.sourceEvent && d3.event.sourceEvent.type === 'brush') return; // ignore zoom-by-brush
 
     // update the browser history
-    this.frame.url = `index.html?file=${this.frame.dataFile}&location=${this.frame.note}`;
+    this.frame.url = `index.html?file=${this.frame.dataFile}&location=${this.frame.note}&view=${this.frame.view}`;
     history.replaceState(this.frame.url, 'Project gGnome.js', this.frame.url);
 
   }
@@ -938,6 +938,8 @@ class BrushContainer {
         })
         .on('mousemove', (d,i) => this.loadPopover(d))
         .on('click', (d,i) => {
+          // make this gene visible for the remaining session
+          this.frame.genes.filter((e,j) => (e.iid === d.iid) && e.type === 'gene').forEach((e,j) => {e.weight = this.frame.margins.genes.weightThreshold});
           // show the gene location on the fragment note
           this.renderFragmentsNote(d.location);
           // filter the Genes
