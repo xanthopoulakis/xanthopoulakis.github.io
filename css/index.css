@@ -7,6 +7,9 @@
 .data-selector, .annotations-selector {
   margin-left: 50px;
 }
+#tags-selector {
+  margin-left: 70px;
+}
 .data-selector span.text {
   margin-right: 20px !important;
   min-width: 100px !important;
@@ -118,7 +121,10 @@ rect.panel {
   fill: rgb(255, 127, 14) !important;
 }
 .annotated {
-  fill: #A020F0 !important;
+  fill-opacity: 0.33;
+  stroke: #A020F0 !important;
+  stroke-width: 2 !important;
+  opacity: 1 !important;
 }
 path.connection {
   fill: none;

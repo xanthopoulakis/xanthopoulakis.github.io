@@ -13,7 +13,7 @@ class Frame extends Base {
       genes: {textGap: 5, selectionSize: 2, weightThreshold: 10},
       reads: {gap: 2, coverageHeight: 140, selectionSize: 2, minCoverageRadius: 6, maxCoverageRadius: 16, coverageTitle: 'Coverage', domainSizeLimit: 30000},
       walks: {bar: 10},
-      annotations: {minDistance: 1e7},
+      annotations: {minDistance: 10000000, padding: 1000, maxClusters: 6},
       defaults: {upperGapPanel: 155, upperGapPanelWithGenes: 360}};
     this.colorScale = d3.scaleOrdinal(d3.schemeCategory10.concat(d3.schemeCategory20b));
     this.updateDimensions(totalWidth, totalHeight);
@@ -84,7 +84,8 @@ class Frame extends Base {
   }
 
   updateAnnotations() {
-    let values = [...new Set(this.dataInput.intervals.filter(d => d.annotation).map(d => d.annotation))].sort((a,b) => d3.ascending(a,b));
+    let intervalAnnotations = this.intervals.map(d => d.annotationArray).flat();
+    let values = [...new Set(intervalAnnotations)].sort((a,b) => d3.ascending(a,b));
     d3.select(`#${this.annotationsSelector}`).classed('hidden', values.length < 1);
     $(`#${this.annotationsSelector}`)
       .dropdown({
@@ -97,7 +98,11 @@ class Frame extends Base {
         onChange: (value, text, $selectedItem) => {
           this.activeAnnotation = value;
           if (value) {
-            let annotated = this.intervals.filter(d => d.annotation === value).sort((a,b) => d3.ascending(a.startPlace, b.startPlace));
+            let annotatedIntervals = this.intervals.filter(d => d.annotationArray.includes(value)).map((d,i) => { return {startPlace: d.startPlace, endPlace: d.endPlace} });
+            let annotatedConnections = this.connections.filter(d => d.source && d.sink && d.annotationArray.includes(value)).map((d,i) => [{startPlace: (d.source.place - 1), endPlace: (d.source.place + 1)}, {startPlace: (d.sink.place - 1), endPlace: (d.sink.place + 1)}]).flat();
+            let annotated = annotatedIntervals.concat(annotatedConnections);
+            annotated = [...new Set(annotated)].sort((a,b) => d3.ascending(a.startPlace, b.startPlace));
+            annotated = Misc.merge(annotated);
             let clusters = [{startPlace: annotated[0].startPlace, endPlace: annotated[0].endPlace}];
             for (let i = 0; i < annotated.length - 1; i++) {
               if (annotated[i + 1].startPlace - annotated[i].endPlace > this.margins.annotations.minDistance) {
@@ -106,6 +111,22 @@ class Frame extends Base {
                 clusters[clusters.length - 1].endPlace = annotated[i + 1].endPlace;
               }
             }
+            while (clusters.length > this.margins.annotations.maxClusters) {
+              clusters = clusters.sort((a,b) => a.startPlace - b.startPlace);
+              let minDistance = Number.MAX_SAFE_INTEGER;
+              let minIndex = 0;
+              for (let i = 0; i < clusters.length - 1; i++) {
+                if ((clusters[i + 1].startPlace - clusters[i].endPlace) < minDistance) {
+                  minDistance = clusters[i + 1].startPlace - clusters[i].endPlace;
+                  minIndex = i;
+                }
+              }
+              clusters = clusters.slice(0,minIndex).concat([{startPlace: clusters[minIndex].startPlace, endPlace: clusters[minIndex+1].endPlace}]).concat(clusters.slice(minIndex + 2, clusters.length));
+            }
+            clusters = Misc.merge(clusters.map((d,i) => { return {
+              startPlace: d3.max([(d.startPlace - 0.66 * (d.endPlace - d.startPlace)),0]),
+              endPlace: d3.min([(d.endPlace + 0.66 * (d.endPlace - d.startPlace)), this.genomeLength])
+            }})).sort((a,b) => d3.ascending(a.startPlace, b.startPlace));
             this.brushContainer.reset();
             this.runDelete();
             clusters.forEach((d,i) => this.brushContainer.createDefaults([d.startPlace, d.endPlace]));
@@ -129,6 +150,7 @@ class Frame extends Base {
   }
 
   updateCoveragePoints() {
+    d3.select("#loader").classed('hidden', false);
     Papa.parse('../../coverage/' + this.dataFileName + '.csv', {
       dynamicTyping: true,
       skipEmptyLines: true,
@@ -151,12 +173,13 @@ class Frame extends Base {
           this.brushContainer.updateFragments(true);
           // update the reads
           this.brushContainer.renderReads();
-          toastr.success(`Loaded ${results.data.length} coverage records!`);
+          toastr.success(`Loaded ${results.data.length} coverage records!`, {timeOut: 500});
           if (this.view === 'coverage') {
             $('.content .ui.dropdown').dropdown('set exactly', 'coverage');
             d3.select('#shadow').classed('hidden', true);
           }
         }
+        d3.select("#loader").classed('hidden', true);
       }
     });
   }
@@ -173,14 +196,16 @@ class Frame extends Base {
     // load the workers
     var worker = new Worker('js/genes-worker.js');
     // Setup an event listener that will handle messages received from the worker.
+    d3.select("#loader").classed('hidden', false);
     worker.addEventListener('message', (e) => {
       this.dataInput.genes = e.data.dataInput.genes;
       this.genes = e.data.genes;
       this.geneBins = e.data.geneBins;
-      toastr.success(`Loaded ${this.dataInput.genes.length} gene records!`);
+      toastr.success(`Loaded ${this.dataInput.genes.length} gene records!`, {timeOut: 500});
       if (this.view === 'genes') {
         $('.content .ui.dropdown').dropdown('set exactly', 'genes');
         d3.select('#shadow').classed('hidden', true);
+        d3.select("#loader").classed('hidden', true);
       }
     }, false);
     worker.postMessage({dataInput: {metadata: this.dataInput.metadata, genes: []}, geneBins: {}, width: this.width});
